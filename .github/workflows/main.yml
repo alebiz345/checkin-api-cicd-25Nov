@@ -58,8 +58,8 @@ jobs:
       - name: Compile and package Mule application
         id: package
         env:
-          RELEASES_EE_USERNAME: ${{ secrets.RELEASES_EE_USERNAME }}
-          RELEASES_EE_PASSWORD: ${{ secrets.RELEASES_EE_PASSWORD }}
+          RELEASES_EE_USERNAME: "muletraining.nexus"
+          RELEASES_EE_PASSWORD: "eApHMgTm"
           CA_CLIENT_ID: ${{ secrets.CA_CLIENT_ID }}
           CA_CLIENT_SECRET: ${{ secrets.CA_CLIENT_SECRET }}
         run: |
