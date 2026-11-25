@@ -1,0 +1,13 @@
+http:
+  host: "0.0.0.0"
+  port: "8081"
+
+tls:
+  keyStore:
+    path: "check-in-papi.p12"
+    alias: "server"
+
+
+api:
+  id: "21318773"
+  definition: "resource::fabc7e03-2142-4245-b966-f02f6cc969f4:simplified-check-in-papi:1.2.0:oas:zip:api.yaml"
