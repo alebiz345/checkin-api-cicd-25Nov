@@ -12,7 +12,6 @@ concurrency:
   group: mule-exchange-publish-${{ github.ref }}
   queue: max
 
-# Let the cache select dependencies by their source repository.
 env:
   MAVEN_OPTS: -Daether.enhancedLocalRepository.split=true -Daether.enhancedLocalRepository.splitRemoteRepository=true
 
@@ -23,7 +22,6 @@ defaults:
 jobs:
   build:
     name: Build and publish Mule application
-    # Limit both jobs to the repository's default branch, including manual runs.
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && !github.event.deleted
     outputs:
       artifact_id: ${{ steps.package.outputs.artifact_id }}
@@ -43,6 +41,7 @@ jobs:
           mvn-server-credentials: |
             ${{ vars.EXCHANGE_SERVER_ID || 'anypoint-exchange-v3' }}:CA_MAVEN_USERNAME:CA_MAVEN_PASSWORD
             releases-ee:RELEASES_EE_USERNAME:RELEASES_EE_PASSWORD
+            mule-private:RELEASES_EE_USERNAME:RELEASES_EE_PASSWORD
 
       - &cache-maven
         name: Cache public Maven dependencies
@@ -58,13 +57,14 @@ jobs:
       - name: Compile and package Mule application
         id: package
         env:
-          RELEASES_EE_USERNAME: "muletraining.nexus"
-          RELEASES_EE_PASSWORD: "eApHMgTm"
+          RELEASES_EE_USERNAME: ${{ secrets.RELEASES_EE_USERNAME }}
+          RELEASES_EE_PASSWORD: ${{ secrets.RELEASES_EE_PASSWORD }}
           CA_CLIENT_ID: ${{ secrets.CA_CLIENT_ID }}
           CA_CLIENT_SECRET: ${{ secrets.CA_CLIENT_SECRET }}
         run: |
           : "${RELEASES_EE_USERNAME:?Set RELEASES_EE_USERNAME}"
           : "${RELEASES_EE_PASSWORD:?Set RELEASES_EE_PASSWORD}"
+
           if [[ -z "$CA_CLIENT_ID" || -z "$CA_CLIENT_SECRET" ]]; then
             echo "::error::Set CA_CLIENT_ID and CA_CLIENT_SECRET for Exchange access."
             exit 1
@@ -72,8 +72,10 @@ jobs:
 
           export CA_MAVEN_USERNAME='~~~Client~~~'
           export CA_MAVEN_PASSWORD="$CA_CLIENT_ID~?~$CA_CLIENT_SECRET"
+
           mvn -V -B -ntp -DskipTests clean package help:evaluate \
             -Dexpression=project.id -Doutput="$RUNNER_TEMP/maven-project-id"
+
           echo "artifact_id=$(cut -d: -f2 "$RUNNER_TEMP/maven-project-id")" >> "$GITHUB_OUTPUT"
 
       - name: Check whether the Mule application JAR is already in Exchange
@@ -88,16 +90,19 @@ jobs:
             --data-urlencode "client_secret=$CA_CLIENT_SECRET" \
             'https://anypoint.mulesoft.com/accounts/api/v2/oauth2/token' \
             | jq -er '.access_token | select(type == "string" and length > 0)')"
+
           printf '::add-mask::%s\n' "$token"
 
-          # Maven project.id is groupId:artifactId:packaging:version.
           asset_path="$(jq -Rer 'split(":") as [$groupId, $artifactId, $packaging, $version]
             | select($packaging == "mule-application")
             | [$groupId, $artifactId, $version] | map(@uri) | join("/")' "$RUNNER_TEMP/maven-project-id")"
+
           asset_metadata="$RUNNER_TEMP/exchange-asset.json"
+
           status="$(curl --silent --show-error --max-time 30 --output "$asset_metadata" \
             --write-out '%{http_code}' --header "Authorization: Bearer $token" \
             "https://anypoint.mulesoft.com/exchange/api/v2/assets/$asset_path")"
+
           case "$status" in
             200)
               if ! jq -e '.type == "app" and any(.files[]?; .classifier == "mule-application" and .packaging == "jar")' \
@@ -127,6 +132,7 @@ jobs:
         run: |
           export CA_MAVEN_USERNAME='~~~Client~~~'
           export CA_MAVEN_PASSWORD="$CA_CLIENT_ID~?~$CA_CLIENT_SECRET"
+
           mvn -B -ntp -DskipTests deploy
 
   deploy_cloudhub:
@@ -134,7 +140,6 @@ jobs:
     needs: build
     environment: cloudhub-sandbox
     runs-on: ubuntu-26.04
-    # Allow Maven's deployment verification to finish after runner setup.
     timeout-minutes: 25
 
     steps:
@@ -149,6 +154,7 @@ jobs:
           mvn-server-credentials: |
             ${{ vars.CLOUDHUB_SERVER_ID || 'cloudhub-deploy' }}:CA_MAVEN_USERNAME:CA_MAVEN_PASSWORD
             releases-ee:RELEASES_EE_USERNAME:RELEASES_EE_PASSWORD
+            mule-private:RELEASES_EE_USERNAME:RELEASES_EE_PASSWORD
 
       - *cache-maven
 
@@ -170,6 +176,7 @@ jobs:
 
           export CA_MAVEN_USERNAME='~~~Client~~~'
           export CA_MAVEN_PASSWORD="$CA_CLIENT_ID~?~$CA_CLIENT_SECRET"
+
           mvn -V -B -ntp \
             -DapplicationName="check-in-app-25Nov-acm" \
             -Danypoint.platform.client_id="$ANYPOINT_PLATFORM_CLIENT_ID" \
